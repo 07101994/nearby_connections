@@ -512,9 +512,11 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
             if (payloadTransferUpdate.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
                 long payloadId = payloadTransferUpdate.getPayloadId();
                 Payload payload = incomingFilePayloads.remove(payloadId);
-                completedFilePayloads.put(payloadId, payload);
-                if (payload.getType() == Payload.Type.FILE) {
-                    processFilePayload(payloadId);
+                if (payload != null) {
+                    completedFilePayloads.put(payloadId, payload);
+                    if (payload.getType() == Payload.Type.FILE) {
+                        processFilePayload(payloadId);
+                    }
                 }
             }
             channel.invokeMethod("onPayloadTransferUpdate", args);
