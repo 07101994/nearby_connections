@@ -6,12 +6,8 @@ import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
-import android.os.Build.VERSION;
-import android.os.Build.VERSION_CODES;
-import android.net.Uri;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 import androidx.collection.SimpleArrayMap;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -440,9 +436,9 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 String filename = filePayloadFilenames.get(payload.getId());
 
                 if (filename != null) {
-                    args.put("filePath", new File(activity.getFilesDir(), filename).getAbsolutePath());
+                    args.put("filePath", activity.getFilesDir().toString() + File.separator + "my_files" + File.separator + filename));
                 } else {
-                    args.put("filePath", new File(activity.getFilesDir(), String.valueOf(payload.getId())).getAbsolutePath());
+                    args.put("filePath", activity.getFilesDir().toString() + File.separator + "my_files" + String.valueOf(payload.getId()));
                 }
             }
 
@@ -467,9 +463,14 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 completedFilePayloads.remove(payloadId);
                 filePayloadFilenames.remove(payloadId);
 
+                File filesDir = new File(activity.getFilesDir(), "my_files");
+                if(!filesDir.exists()) {
+                    filesDir.mkdirs();
+                }
+
                 ParcelFileDescriptor pfd = filePayload.asFile().asParcelFileDescriptor();
                 ParcelFileDescriptor.AutoCloseInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(pfd);
-                File resultFile = new File(activity.getFilesDir(), filename);
+                File resultFile = new File(filesDir, filename);
                 try {
                     copyStream(inputStream, new FileOutputStream(resultFile));
                     ParcelFileDescriptor.AutoCloseOutputStream outputStream = new ParcelFileDescriptor.AutoCloseOutputStream(pfd);
