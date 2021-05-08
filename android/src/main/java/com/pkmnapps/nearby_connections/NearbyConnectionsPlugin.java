@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
+import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
@@ -31,6 +32,10 @@ import com.google.android.gms.tasks.OnSuccessListener;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -421,16 +426,42 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 assert bytes != null;
                 args.put("bytes", bytes);
             } else if (payload.getType() == Payload.Type.FILE) {
-                if (VERSION.SDK_INT >= VERSION_CODES.Q) {
-                    // TODO: fix this
-                    args.put("filePath", payload.asFile().asJavaFile().getAbsolutePath());
-                }
-                else{
-                    args.put("filePath", payload.asFile().asJavaFile().getAbsolutePath());
-                }
+//                if (VERSION.SDK_INT >= VERSION_CODES.Q) {
+//                    // TODO: fix this
+                    ParcelFileDescriptor pfd = payload.asFile().asParcelFileDescriptor();
+                    ParcelFileDescriptor.AutoCloseInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(pfd);
+                    File resultFile = new File(activity.getFilesDir(), String.valueOf(payload.getId()));
+                    try {
+                        copyStream(inputStream, new FileOutputStream(resultFile));
+                        ParcelFileDescriptor.AutoCloseOutputStream outputStream = new ParcelFileDescriptor.AutoCloseOutputStream(pfd);
+                        outputStream.write(new byte[]);
+                        outputStream.flush();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    args.put("filePath", resultFile.getAbsolutePath());
+//                }
+//                else{
+//                    args.put("filePath", payload.asFile().asJavaFile().getAbsolutePath());
+//                }
             }
 
             channel.invokeMethod("onPayloadReceived", args);
+        }
+
+        /** Copies a stream from one location to another. */
+        private static void copyStream(InputStream in, OutputStream out) throws IOException {
+            try {
+                byte[] buffer = new byte[1024];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+                out.flush();
+            } finally {
+                in.close();
+                out.close();
+            }
         }
 
         @Override
