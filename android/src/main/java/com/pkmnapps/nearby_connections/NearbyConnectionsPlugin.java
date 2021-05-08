@@ -11,6 +11,8 @@ import android.os.Build.VERSION_CODES;
 import android.net.Uri;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
+import androidx.collection.SimpleArrayMap;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
@@ -36,6 +38,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -413,6 +416,10 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
     };
 
     private final PayloadCallback payloadCallback = new PayloadCallback() {
+        private final SimpleArrayMap<Long, Payload> incomingFilePayloads = new SimpleArrayMap<>();
+        private final SimpleArrayMap<Long, Payload> completedFilePayloads = new SimpleArrayMap<>();
+        private final SimpleArrayMap<Long, String> filePayloadFilenames = new SimpleArrayMap<>();
+
         @Override
         public void onPayloadReceived(@NonNull String endpointId, @NonNull Payload payload) {
             Log.d("nearby_connections", "onPayloadReceived");
@@ -425,32 +432,57 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 byte[] bytes = payload.asBytes();
                 assert bytes != null;
                 args.put("bytes", bytes);
+                String payloadFilenameMessage = new String(payload.asBytes(), StandardCharsets.UTF_8);
+                long payloadId = addPayloadFilename(payloadFilenameMessage);
+                processFilePayload(payloadId);
             } else if (payload.getType() == Payload.Type.FILE) {
-//                if (VERSION.SDK_INT >= VERSION_CODES.Q) {
-//                    // TODO: fix this
-                    ParcelFileDescriptor pfd = payload.asFile().asParcelFileDescriptor();
-                    ParcelFileDescriptor.AutoCloseInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(pfd);
-                    File resultFile = new File(activity.getFilesDir(), String.valueOf(payload.getId()));
-                    try {
-                        copyStream(inputStream, new FileOutputStream(resultFile));
-                        ParcelFileDescriptor.AutoCloseOutputStream outputStream = new ParcelFileDescriptor.AutoCloseOutputStream(pfd);
-                        outputStream.write(new byte[]);
-                        outputStream.flush();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    args.put("filePath", resultFile.getAbsolutePath());
-//                }
-//                else{
-//                    args.put("filePath", payload.asFile().asJavaFile().getAbsolutePath());
-//                }
+                incomingFilePayloads.put(payload.getId(), payload);
+                String filename = filePayloadFilenames.get(payload.getId());
+
+                if (filename != null) {
+                    args.put("filePath", new File(activity.getFilesDir(), filename).getAbsolutePath());
+                } else {
+                    args.put("filePath", new File(activity.getFilesDir(), String.valueOf(payload.getId())).getAbsolutePath());
+                }
             }
 
             channel.invokeMethod("onPayloadReceived", args);
         }
 
+        private long addPayloadFilename(String payloadFilenameMessage) {
+            String[] parts = payloadFilenameMessage.split(":");
+            long payloadId = Long.parseLong(parts[0]);
+            String filename = parts[1];
+            filePayloadFilenames.put(payloadId, filename);
+            return payloadId;
+        }
+
+        private void processFilePayload(long payloadId) {
+            // BYTES and FILE could be received in any order, so we call when either the BYTES or the FILE
+            // payload is completely received. The file payload is considered complete only when both have
+            // been received.
+            Payload filePayload = completedFilePayloads.get(payloadId);
+            String filename = filePayloadFilenames.get(payloadId);
+            if (filePayload != null && filename != null) {
+                completedFilePayloads.remove(payloadId);
+                filePayloadFilenames.remove(payloadId);
+
+                ParcelFileDescriptor pfd = filePayload.asFile().asParcelFileDescriptor();
+                ParcelFileDescriptor.AutoCloseInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(pfd);
+                File resultFile = new File(activity.getFilesDir(), filename);
+                try {
+                    copyStream(inputStream, new FileOutputStream(resultFile));
+                    ParcelFileDescriptor.AutoCloseOutputStream outputStream = new ParcelFileDescriptor.AutoCloseOutputStream(pfd);
+                    outputStream.write(new byte[0]);
+                    outputStream.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
         /** Copies a stream from one location to another. */
-        private static void copyStream(InputStream in, OutputStream out) throws IOException {
+        private void copyStream(InputStream in, OutputStream out) throws IOException {
             try {
                 byte[] buffer = new byte[1024];
                 int read;
@@ -477,6 +509,14 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
             args.put("bytesTransferred", payloadTransferUpdate.getBytesTransferred());
             args.put("totalBytes", payloadTransferUpdate.getTotalBytes());
 
+            if (payloadTransferUpdate.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
+                long payloadId = payloadTransferUpdate.getPayloadId();
+                Payload payload = incomingFilePayloads.remove(payloadId);
+                completedFilePayloads.put(payloadId, payload);
+                if (payload.getType() == Payload.Type.FILE) {
+                    processFilePayload(payloadId);
+                }
+            }
             channel.invokeMethod("onPayloadTransferUpdate", args);
         }
     };
