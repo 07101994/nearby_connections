@@ -436,7 +436,7 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 String filename = filePayloadFilenames.get(payload.getId());
 
                 if (filename != null) {
-                    args.put("filePath", activity.getFilesDir().toString() + File.separator + "my_files" + File.separator + filename));
+                    args.put("filePath", activity.getFilesDir().toString() + File.separator + "my_files" + File.separator + filename);
                 } else {
                     args.put("filePath", activity.getFilesDir().toString() + File.separator + "my_files" + String.valueOf(payload.getId()));
                 }
