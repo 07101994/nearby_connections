@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -291,9 +292,9 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                 assert filePath != null;
 
                 try {
-                    File file = new File(filePath);
+                    ParcelFileDescriptor parcelFileDescriptor = activity.getContentResolver().openFileDescriptor(Uri.parse(filePath), "r");
 
-                    Payload filePayload = Payload.fromFile(file);
+                    Payload filePayload = Payload.fromFile(parcelFileDescriptor);
                     Nearby.getConnectionsClient(activity).sendPayload(endpointId, filePayload);
                     Log.d("nearby_connections", "sentFilePayload");
                     result.success(filePayload.getId()); // return payload id to dart
