@@ -38,6 +38,8 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -59,6 +61,7 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
     private static LocationHelper locationHelper;
     private static ActivityPluginBinding activityPluginBinding;
     private static PluginRegistry.Registrar pluginRegistrar;
+    ExecutorService executorService = Executors.newFixedThreadPool(3);
 
     private NearbyConnectionsPlugin(Activity activity) {
         this.activity = activity;
@@ -483,6 +486,44 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
             }
         }
 
+        private void processFilePayloadAndCopyFile(long payloadId, final Map<String, Object> args) {
+            // BYTES and FILE could be received in any order, so we call when either the BYTES or the FILE
+            // payload is completely received. The file payload is considered complete only when both have
+            // been received.
+            Payload filePayload = completedFilePayloads.get(payloadId);
+            String filename = filePayloadFilenames.get(payloadId);
+            if (filePayload != null && filename != null) {
+                completedFilePayloads.remove(payloadId);
+                filePayloadFilenames.remove(payloadId);
+
+                File filesDir = new File(activity.getFilesDir(), "my_files");
+                if(!filesDir.exists()) {
+                    filesDir.mkdirs();
+                }
+
+                ParcelFileDescriptor pfd = filePayload.asFile().asParcelFileDescriptor();
+                ParcelFileDescriptor.AutoCloseInputStream inputStream = new ParcelFileDescriptor.AutoCloseInputStream(pfd);
+                File resultFile = new File(filesDir, filename);
+                try {
+                    copyStream(inputStream, new FileOutputStream(resultFile));
+                    ParcelFileDescriptor.AutoCloseOutputStream outputStream = new ParcelFileDescriptor.AutoCloseOutputStream(pfd);
+                    outputStream.write(new byte[0]);
+                    outputStream.flush();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            if(activity != null) {
+                activity.runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        channel.invokeMethod("onPayloadTransferUpdate", args);
+                    }
+                });
+            }
+        }
+
         /** Copies a stream from one location to another. */
         private void copyStream(InputStream in, OutputStream out) throws IOException {
             try {
@@ -504,7 +545,7 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
             // required for files and streams
 
             Log.d("nearby_connections", "onPayloadTransferUpdate");
-            Map<String, Object> args = new HashMap<>();
+            final Map<String, Object> args = new HashMap<>();
             args.put("endpointId", endpointId);
             args.put("payloadId", payloadTransferUpdate.getPayloadId());
             args.put("status", payloadTransferUpdate.getStatus());
@@ -512,16 +553,22 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
             args.put("totalBytes", payloadTransferUpdate.getTotalBytes());
 
             if (payloadTransferUpdate.getStatus() == PayloadTransferUpdate.Status.SUCCESS) {
-                long payloadId = payloadTransferUpdate.getPayloadId();
+                final long payloadId = payloadTransferUpdate.getPayloadId();
                 Payload payload = incomingFilePayloads.remove(payloadId);
                 if (payload != null) {
                     completedFilePayloads.put(payloadId, payload);
                     if (payload.getType() == Payload.Type.FILE) {
-                        processFilePayload(payloadId);
+                        executorService.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                processFilePayloadAndCopyFile(payloadId, channel, args);
+                            }
+                        });
                     }
                 }
+            } else {
+                channel.invokeMethod("onPayloadTransferUpdate", args);
             }
-            channel.invokeMethod("onPayloadTransferUpdate", args);
         }
     };
 
