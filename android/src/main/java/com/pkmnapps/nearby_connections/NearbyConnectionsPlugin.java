@@ -561,7 +561,7 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                         executorService.execute(new Runnable() {
                             @Override
                             public void run() {
-                                processFilePayloadAndCopyFile(payloadId, channel, args);
+                                processFilePayloadAndCopyFile(payloadId, args);
                             }
                         });
                     }
