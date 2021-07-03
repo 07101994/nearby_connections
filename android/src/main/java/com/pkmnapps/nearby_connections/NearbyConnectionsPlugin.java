@@ -565,6 +565,8 @@ public class NearbyConnectionsPlugin implements MethodCallHandler, FlutterPlugin
                             }
                         });
                     }
+                } else {
+                    channel.invokeMethod("onPayloadTransferUpdate", args);
                 }
             } else {
                 channel.invokeMethod("onPayloadTransferUpdate", args);
